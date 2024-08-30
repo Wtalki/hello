@@ -1,3 +1,109 @@
-<h2>hello</h2>
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const sharp = require('sharp');
+const axios = require('axios'); // Axios for fetching images from URL
+const fs = require('fs');
+const Joi = require('joi'); // Joi for validating API data
 
-hello
+const app = express();
+
+// Parse JSON bodies (as sent by API clients)
+app.use(express.json());
+
+// Allowed image MIME types
+const allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+
+// Multer configuration for multiple image uploads
+const storage = multer.diskStorage({
+destination: function (req, file, cb) {
+cb(null, 'uploads/original/'); // Store original images in 'uploads/original'
+folder
+},
+filename: function (req, file, cb) {
+cb(null, Date.now() + path.extname(file.originalname)); // Ensure unique
+filenames
+}
+});
+
+const upload = multer({
+storage: storage,
+limits: {
+fileSize: 5 * 1024 * 1024 // Limit file size to 5MB per file
+},
+fileFilter: (req, file, cb) => {
+if (allowedTypes.includes(file.mimetype)) {
+cb(null, true); // Accept the file
+} else {
+cb(new Error('Only .jpeg, .png, and .gif files are allowed!')); // Reject the
+file
+}
+}
+});
+
+// Define Joi schema for API data validation (without tags)
+const imageSchema = Joi.object({
+title: Joi.string().min(3).max(30).required(),
+description: Joi.string().max(255).optional()
+});
+
+// Serve static files from the 'uploads' folder
+app.use('/uploads', express.static('uploads'));
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+if (err) {
+res.status(400).send(err.message);
+} else {
+next();
+}
+});
+
+// Route to handle multiple image uploads and conversion to WebP
+app.post('/upload-multiple', upload.array('images', 10), async (req, res) => {
+try {
+// Validate API data using Joi
+const { error } = imageSchema.validate(req.body);
+if (error) {
+return res.status(400).send(`Validation error: ${error.details[0].message}`);
+}
+
+// Check if files are uploaded
+if (!req.files || req.files.length === 0) {
+return res.status(400).send('No files uploaded.');
+}
+
+const convertedImages = [];
+
+// Iterate over each uploaded file
+for (const file of req.files) {
+const inputPath = file.path; // Path of the original image
+const outputPath =
+`uploads/webp/${Date.now()}-${file.originalname.split('.')[0]}.webp`; //
+Destination path for the WebP image
+
+// Convert to WebP format using sharp
+await sharp(inputPath)
+.webp({ quality: 80 }) // Set WebP quality (0-100)
+.toFile(outputPath);
+
+// Store the path of the converted image
+convertedImages.push(`http://localhost:3000/${outputPath}`);
+}
+
+// Send success response with links to the converted images
+res.send({
+message: 'Images uploaded and converted successfully.',
+images: convertedImages // Array of links to the converted images
+});
+} catch (error) {
+// Error response in case of conversion or upload failure
+res.status(400).send('Error uploading or converting images!');
+}
+});
+
+// Start the server on port 3000
+const PORT = 3000;
+app.listen(PORT, () => {
+console.log(`Server running on http://localhost:${PORT}`);
+});
